@@ -422,6 +422,15 @@ public class Helpers
             }
         }
 
+        public static IBuffer FormatData(byte[] bytes)
+        {
+            var writer = new DataWriter();
+            writer.ByteOrder = ByteOrder.LittleEndian;
+            writer.WriteBytes(bytes);
+
+            return writer.DetachBuffer();
+        }
+        
         /// <summary>
         /// Format data for writing by specific format
         /// </summary>

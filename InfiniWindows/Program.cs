@@ -1,29 +1,16 @@
-﻿using Windows.Devices.Bluetooth;
-using Windows.Devices.Bluetooth.GenericAttributeProfile;
-using Windows.Devices.Enumeration;
+﻿using Windows.Devices.Enumeration;
 using InfiniWindows;
 
 class Program
 {
     // "Magic" string for all BLE devices
-    static string _aqsAllBLEDevices = "(System.Devices.Aep.ProtocolId:=\"{bb7bb05e-5972-42b5-94fc-76eaa7084d49}\")";
+    private const string _aqsAllBLEDevices =
+        "(System.Devices.Aep.ProtocolId:=\"{bb7bb05e-5972-42b5-94fc-76eaa7084d49}\")";
 
     static string[] _requestedBLEProperties =
         { "System.Devices.Aep.DeviceAddress", "System.Devices.Aep.Bluetooth.Le.IsConnectable", };
 
-
     private static readonly List<DeviceInformation> _deviceList = new();
-    private static BluetoothLEDevice _selectedDevice = null;
-
-    // Current data format
-    static readonly Helpers.DataFormat _dataFormat = Helpers.DataFormat.UTF8;
-
-    static readonly List<Helpers.BleAttributeDisplay> _services = new();
-    private static Helpers.BleAttributeDisplay _selectedService = null;
-
-    static readonly List<Helpers.BleAttributeDisplay> _characteristics = new();
-    private static Helpers.BleAttributeDisplay _selectedCharacteristic = null;
-
 
     private static async Task Main(string[] args)
     {
@@ -34,13 +21,16 @@ class Program
 
         Console.WriteLine("Scanning for InfiniTime device...");
         var deviceManager = new DeviceManager();
-        _selectedDevice = await deviceManager.FindDeviceAsync(_deviceList);
-        _services.AddRange(await deviceManager.GetServices());
+        await deviceManager.FindDeviceAsync(_deviceList);
 
         var deviceInformationService = new DeviceInformationService(deviceManager);
         Console.WriteLine($"Firmware Version: {await deviceInformationService.GetFirmwareRevisionAsync()}");
 
-        Console.WriteLine("Connected!");
+        Console.Write("Enter path to firmware zip archive: ");
+        var zipPath = Console.ReadLine();
+
+        await new FirmwareUpdateService(deviceManager, zipPath)
+            .UpdateAsync();
 
         watcher.Stop();
     }

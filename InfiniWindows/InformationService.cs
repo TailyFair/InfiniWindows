@@ -1,6 +1,18 @@
-﻿using ABI.Windows.Devices.Enumeration;
+﻿namespace InfiniWindows;
 
-namespace InfiniWindows;
+public class AlertService : BaseBleService
+{
+    public AlertService(DeviceManager deviceManager) : base(deviceManager)
+    {
+    }
+
+    public override string Uuid => "00001811-0000-1000-8000-00805f9b34fb";
+
+    private const string NewAlertUuid = "00002a46-0000-1000-8000-00805f9b34fb";
+
+    public async Task WriteAlertAsync(string data) =>
+        await WriteCharacteristicAsync(NewAlertUuid, $"0001Title00Test Body", Helpers.DataFormat.ASCII);
+}
 
 public class DeviceInformationService : BaseBleService
 {

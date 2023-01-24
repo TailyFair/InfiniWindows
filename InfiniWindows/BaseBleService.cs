@@ -12,8 +12,9 @@ public abstract class BaseBleService
 
     // Current data format
     static readonly Helpers.DataFormat _dataFormat = Helpers.DataFormat.UTF8;
+    private IReadOnlyList<GattCharacteristic> _characteristics;
 
-    public BaseBleService(DeviceManager deviceManager)
+    protected BaseBleService(DeviceManager deviceManager)
     {
         _deviceManager = deviceManager;
     }
@@ -39,7 +40,47 @@ public abstract class BaseBleService
         return "";
     }
 
-    public async Task<IReadOnlyList<GattCharacteristic>> GetCharacteristicsAsync()
+    internal async Task WriteBytesAsync(string uuid, byte[] bytes)
+    {
+        if (_characteristics == null)
+        {
+            _characteristics = await GetCharacteristicsAsync();
+        }
+
+        var attr = _characteristics
+            .FirstOrDefault(x => x.Uuid.ToString() == uuid);
+
+        var buffer = Helpers.Utilities.FormatData(bytes);
+        var result = await attr.WriteValueWithResultAsync(buffer);
+
+        if (result.Status != GattCommunicationStatus.Success)
+        {
+            Console.WriteLine($"Failed to write with status: {result.Status}");
+        }
+    }
+
+    internal async Task WriteCharacteristicAsync(string uuid, string data, Helpers.DataFormat dataFormat)
+    {
+        var characteristics = await GetCharacteristicsAsync();
+
+
+        var attr = characteristics
+            .FirstOrDefault(x => x.Uuid.ToString() == uuid);
+
+
+        var buffer = Helpers.Utilities.FormatData(data, dataFormat);
+        var result = await attr.WriteValueWithResultAsync(buffer);
+
+        if (result.Status != GattCommunicationStatus.Success)
+        {
+            Console.WriteLine($"Failed to write with status: {result.Status}");
+        }
+    }
+
+    protected async Task<GattCharacteristic> GetCharacteristicAsync(string uuid) => (await GetCharacteristicsAsync())
+        .FirstOrDefault(x => x.Uuid.ToString() == uuid);
+
+    private async Task<IReadOnlyList<GattCharacteristic>> GetCharacteristicsAsync()
     {
         var service = (await _deviceManager.GetServices())
             .First(x => x.Uuid.ToString() == Uuid);

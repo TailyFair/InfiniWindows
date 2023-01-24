@@ -14,7 +14,8 @@ public class DeviceManager
     public async Task<BluetoothLEDevice> FindDeviceAsync(List<DeviceInformation> deviceList)
     {
         _deviceList = deviceList;
-        return await FindDeviceAsync();
+        _selectedDevice = await FindDeviceAsync();
+        return _selectedDevice;
     }
 
     private async Task<BluetoothLEDevice> FindDeviceAsync()

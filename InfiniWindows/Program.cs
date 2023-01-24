@@ -14,14 +14,15 @@ class Program
 
     private static async Task Main(string[] args)
     {
-        Console.WriteLine("Hello World!");
-
         // Start endless BLE device watcher
         var watcher = CreateDeviceWatcher();
 
         Console.WriteLine("Scanning for InfiniTime device...");
         var deviceManager = new DeviceManager();
-        await deviceManager.FindDeviceAsync(_deviceList);
+        while (await deviceManager.FindDeviceAsync(_deviceList) == null)
+        {
+            await Task.Delay(100);
+        }
 
         var deviceInformationService = new DeviceInformationService(deviceManager);
         Console.WriteLine($"Firmware Version: {await deviceInformationService.GetFirmwareRevisionAsync()}");

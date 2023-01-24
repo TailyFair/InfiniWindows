@@ -1,22 +1,39 @@
 ﻿using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using Windows.Devices.Enumeration;
+using Windows.Foundation;
 
 namespace InfiniWindows;
 
 public abstract class BaseBleService
 {
-    public abstract string Uuid { get; }
+    protected abstract string Uuid { get; }
 
     private readonly DeviceManager _deviceManager;
 
-    // Current data format
-    static readonly Helpers.DataFormat _dataFormat = Helpers.DataFormat.UTF8;
     private IReadOnlyList<GattCharacteristic> _characteristics;
 
     protected BaseBleService(DeviceManager deviceManager)
     {
         _deviceManager = deviceManager;
+    }
+
+    internal async Task SubscribeToCharacteristicAsync(string uuid,
+        TypedEventHandler<GattCharacteristic, GattValueChangedEventArgs> controlPointOnValueChanged)
+    {
+        var controlPoint = await GetCharacteristicAsync(uuid);
+
+        var status = await controlPoint.WriteClientCharacteristicConfigurationDescriptorAsync(
+            GattClientCharacteristicConfigurationDescriptorValue.Notify
+        );
+        if (status == GattCommunicationStatus.Success)
+        {
+            controlPoint.ValueChanged += controlPointOnValueChanged;
+        }
+        else
+        {
+            Console.WriteLine($"Can't subscribe to UUID: {uuid}");
+        }
     }
 
     internal async Task<string> ReadCharacteristicAsync(string characteristicUuid)
@@ -31,7 +48,7 @@ public abstract class BaseBleService
 
         if (result.Status == GattCommunicationStatus.Success)
         {
-            var value = Helpers.Utilities.FormatValue(result.Value, _dataFormat);
+            var value = Helpers.Utilities.FormatValue(result.Value, Helpers.DataFormat.UTF8);
             return value;
         }
 
@@ -59,32 +76,14 @@ public abstract class BaseBleService
         }
     }
 
-    internal async Task WriteCharacteristicAsync(string uuid, string data, Helpers.DataFormat dataFormat)
-    {
-        var characteristics = await GetCharacteristicsAsync();
-
-
-        var attr = characteristics
+    private async Task<GattCharacteristic> GetCharacteristicAsync(string uuid)
+        => (await GetCharacteristicsAsync())
             .FirstOrDefault(x => x.Uuid.ToString() == uuid);
-
-
-        var buffer = Helpers.Utilities.FormatData(data, dataFormat);
-        var result = await attr.WriteValueWithResultAsync(buffer);
-
-        if (result.Status != GattCommunicationStatus.Success)
-        {
-            Console.WriteLine($"Failed to write with status: {result.Status}");
-        }
-    }
-
-    protected async Task<GattCharacteristic> GetCharacteristicAsync(string uuid) => (await GetCharacteristicsAsync())
-        .FirstOrDefault(x => x.Uuid.ToString() == uuid);
 
     private async Task<IReadOnlyList<GattCharacteristic>> GetCharacteristicsAsync()
     {
         var service = (await _deviceManager.GetServices())
             .First(x => x.Uuid.ToString() == Uuid);
-
 
         IReadOnlyList<GattCharacteristic> characteristics = new List<GattCharacteristic>();
 

@@ -12,7 +12,7 @@ public class FirmwareUpdateService : BaseBleService
         PrepareFiles(path);
     }
 
-    public override string Uuid => "00001530-1212-efde-1523-785feabcd123";
+    protected override string Uuid => "00001530-1212-efde-1523-785feabcd123";
 
     private const string ControlPointUuid = "00001531-1212-efde-1523-785feabcd123";
     private const string PacketUuid = "00001532-1212-efde-1523-785feabcd123";
@@ -56,6 +56,171 @@ public class FirmwareUpdateService : BaseBleService
         if (binFile == null)
             throw new ArgumentException("BIN file cannot be found");
         _binFileBytes = ReadFully(binFile.Open());
+
+        // Prepare BIN file
+        _binFileChunks = _binFileBytes.Chunk(ChunkSize).ToList();
+        _chunksCount = _binFileChunks.Count;
+    }
+
+    public async Task UpdateAsync()
+    {
+        await SubscribeToCharacteristicAsync(ControlPointUuid, OnControlPointOnValueChanged);
+
+        await RunStepOneAsync();
+
+        await RunStepTwoAsync();
+
+        while (_currentProcessStep != 10)
+        {
+            await Task.Delay(250);
+        }
+
+        Console.WriteLine("Update finished!");
+    }
+
+    private void OnControlPointOnValueChanged(GattCharacteristic sender, GattValueChangedEventArgs args) => Task.Run(
+        async () =>
+        {
+            var value = args.CharacteristicValue.ToArray();
+
+            if (value.SequenceEqual(new byte[] { 0x10, 0x01, 0x01 }))
+            {
+                await RunStepThreeAsync();
+
+                await RunStepFourAsync();
+            }
+            else if (value.SequenceEqual(new byte[] { 0x10, 0x02, 0x01 }))
+            {
+                await RunStepFiveAsync();
+
+                await RunStepSixAsync();
+
+                await RunStepSevenAsync();
+            }
+            else if (value.Length == 5 && value[0] == 0x11)
+            {
+                var offset = BinaryPrimitives.ReadUInt32LittleEndian(value.Skip(1).ToArray());
+                var sentBytes = (_currentChunk * ChunkSize);
+                if (sentBytes != offset)
+                {
+                    Console.WriteLine("Offset mismatch!");
+                    // TODO Handle mismatch
+                    return;
+                }
+
+                var totalSize = _chunksCount * ChunkSize;
+                var percent = (sentBytes / (double)totalSize) * 100;
+                if (percent > lastProgressPercent + 1)
+                {
+                    PrintProgress(sentBytes, totalSize, percent);
+                    lastProgressPercent = percent;
+                }
+
+                await RunStepSevenAsync();
+            }
+            else if (value.SequenceEqual(new byte[] { 0x10, 0x03, 0x01 }))
+            {
+                await RunStepEightAsync();
+            }
+            else if (value.SequenceEqual(new byte[] { 0x10, 0x04, 0x01 }))
+            {
+                await RunStepNineAsync();
+            }
+            else
+            {
+                Console.WriteLine($"Error: {BitConverter.ToString(value)}");
+            }
+        });
+
+    private async Task RunStepOneAsync()
+    {
+        _currentProcessStep = 1;
+        Console.WriteLine("Sending ('Start DFU' (0x01), 'Application' (0x04)) to DFU Control Point");
+        await WriteBytesAsync(ControlPointUuid, new byte[] { 0x01, 0x04 });
+    }
+
+    private async Task RunStepTwoAsync()
+    {
+        _currentProcessStep = 2;
+        Console.WriteLine("Sending Image size to the DFU Packet characteristic");
+        var destination = new byte[4];
+        BinaryPrimitives.WriteInt32LittleEndian(destination, _binFileBytes.Length);
+        var fullSize = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }
+            .Concat(destination)
+            .ToArray();
+        await WriteBytesAsync(PacketUuid, fullSize);
+        Console.WriteLine("Waiting for Image Size notification");
+    }
+
+    private async Task RunStepThreeAsync()
+    {
+        _currentProcessStep = 3;
+        Console.WriteLine("Sending 'INIT DFU' + Init Packet Command");
+        await WriteBytesAsync(ControlPointUuid, new byte[] { 0x02, 0x00 });
+    }
+
+    private async Task RunStepFourAsync()
+    {
+        _currentProcessStep = 4;
+        Console.WriteLine("Sending the Init image (DAT)");
+        await WriteBytesAsync(PacketUuid, _datFileBytes);
+
+        Console.WriteLine("Send 'INIT DFU' + Init Packet Complete Command");
+        await WriteBytesAsync(ControlPointUuid, new byte[] { 0x02, 0x01 });
+        Console.WriteLine("Waiting for INIT DFU notification");
+    }
+
+    private async Task RunStepFiveAsync()
+    {
+        _currentProcessStep = 5;
+        Console.WriteLine("Setting packet receipt notification interval");
+        await WriteBytesAsync(ControlPointUuid, new byte[] { 0x08, 0x0A });
+    }
+
+    private async Task RunStepSixAsync()
+    {
+        _currentProcessStep = 6;
+        Console.WriteLine("Send 'RECEIVE FIRMWARE IMAGE' command to set DFU in firmware receive state");
+        await WriteBytesAsync(ControlPointUuid, new byte[] { 0x03 });
+    }
+
+    private async Task RunStepSevenAsync()
+    {
+        _currentProcessStep = 7;
+        var chunk = _binFileChunks[_currentChunk];
+        await WriteBytesAsync(PacketUuid, chunk);
+        _currentChunk++;
+        if (_currentChunk == _chunksCount)
+        {
+            PrintProgress(_chunksCount * ChunkSize, _chunksCount * ChunkSize, 100);
+            Console.WriteLine("All chunks are sent");
+        }
+        else if ((_currentChunk % SegmentsInterval) != 0)
+        {
+            await RunStepSevenAsync();
+        }
+    }
+
+    private async Task RunStepEightAsync()
+    {
+        _currentProcessStep = 8;
+        Console.WriteLine("Sending Validate command");
+        await WriteBytesAsync(ControlPointUuid, new byte[] { 0x04 });
+    }
+
+    private async Task RunStepNineAsync()
+    {
+        _currentProcessStep = 9;
+        Console.WriteLine("Activate and reset");
+        await WriteBytesAsync(ControlPointUuid, new byte[] { 0x05 });
+        isUpdateInProgress = false;
+        _currentProcessStep = 10;
+        Console.WriteLine("Finished");
+    }
+
+    private static void PrintProgress(int sentBytes, int totalSize, double percent)
+    {
+        Console.WriteLine($"[{DateTime.UtcNow}] Sent {sentBytes.ToString(),6}/{totalSize:D6} - {percent:F2}%");
     }
 
     private static byte[] ReadFully(Stream input)
@@ -69,161 +234,5 @@ public class FirmwareUpdateService : BaseBleService
         }
 
         return ms.ToArray();
-    }
-
-    private void ControlPointOnValueChanged(GattCharacteristic sender, GattValueChangedEventArgs args)
-    {
-        var val = args.CharacteristicValue.ToArray();
-
-        // Console.WriteLine("Got event!");
-        if (val.SequenceEqual(new byte[] { 0x10, 0x01, 0x01 }))
-        {
-            // Step 3
-            _currentProcessStep = 3;
-            Console.WriteLine("Sending 'INIT DFU' + Init Packet Command");
-            WriteBytesAsync(ControlPointUuid, new byte[] { 0x02, 0x00 }).GetAwaiter().GetResult();
-
-            // Step 4
-            _currentProcessStep = 4;
-            Console.WriteLine("Sending the Init image (DAT)");
-            WriteBytesAsync(PacketUuid, _datFileBytes).GetAwaiter().GetResult();
-
-            Console.WriteLine("Send 'INIT DFU' + Init Packet Complete Command");
-            WriteBytesAsync(ControlPointUuid, new byte[] { 0x02, 0x01 }).GetAwaiter().GetResult();
-            Console.WriteLine("Waiting for INIT DFU notification");
-        }
-        else
-        {
-            if (val.SequenceEqual(new byte[] { 0x10, 0x02, 0x01 }))
-            {
-                // Step 5
-                _currentProcessStep = 5;
-                Console.WriteLine("Setting packet receipt notification interval");
-                WriteBytesAsync(ControlPointUuid, new byte[] { 0x08, 0x0A }).GetAwaiter().GetResult();
-
-                // Step 6
-                _currentProcessStep = 6;
-                Console.WriteLine("Send 'RECEIVE FIRMWARE IMAGE' command to set DFU in firmware receive state");
-                WriteBytesAsync(ControlPointUuid, new byte[] { 0x03 }).GetAwaiter().GetResult();
-
-                // Prep Step 7
-                _currentProcessStep = 7;
-                _binFileChunks = _binFileBytes.Chunk(ChunkSize).ToList();
-                _chunksCount = _binFileChunks.Count;
-                Console.WriteLine($"Sending {_chunksCount} chunks in total");
-                StepSeven();
-            }
-            else if (val.Length == 5 && val[0] == 0x11)
-            {
-                var offset = BinaryPrimitives.ReadUInt32LittleEndian(val.Skip(1).ToArray());
-                var sentBytes = (_currentChunk * ChunkSize);
-                if (sentBytes == offset)
-                {
-                    var totalSize = _chunksCount * ChunkSize;
-                    var percent = (double)(((double)sentBytes / (double)totalSize) * 100);
-                    if (percent > lastProgressPercent + 1)
-                    {
-                        PrintProgress(sentBytes, totalSize, percent);
-                        lastProgressPercent = percent;
-                    }
-
-                    StepSeven();
-                }
-                else
-                {
-                    Console.WriteLine("Offset mismatch!");
-                }
-            }
-            else if (val.SequenceEqual(new byte[] { 0x10, 0x03, 0x01 }))
-            {
-                // Step 8
-                _currentProcessStep = 8;
-                Console.WriteLine("Sending Validate command");
-                WriteBytesAsync(ControlPointUuid, new byte[] { 0x04 }).GetAwaiter().GetResult();
-            }
-            else if (val.SequenceEqual(new byte[] { 0x10, 0x04, 0x01 }))
-            {
-                // Step 9
-                _currentProcessStep = 9;
-                Console.WriteLine("Activate and reset");
-                WriteBytesAsync(ControlPointUuid, new byte[] { 0x05 }).GetAwaiter().GetResult();
-                isUpdateInProgress = false;
-            }
-            else
-            {
-                Console.WriteLine($"Error: {BitConverter.ToString(val)}");
-            }
-        }
-    }
-
-    private static void PrintProgress(int sentBytes, int totalSize, double percent)
-    {
-        Console.WriteLine($"[{DateTime.UtcNow}] Sent {sentBytes:D6}/{totalSize:D6} - {percent:F2}%");
-    }
-
-    private void StepSeven()
-    {
-        var chunk = _binFileChunks[_currentChunk];
-        WriteBytesAsync(PacketUuid, chunk).GetAwaiter().GetResult();
-        _currentChunk++;
-        if (_currentChunk == _chunksCount)
-        {
-            PrintProgress(_chunksCount * ChunkSize, _chunksCount * ChunkSize, 100);
-            Console.WriteLine("All segments are sent");
-        }
-        else if ((_currentChunk % SegmentsInterval) != 0)
-        {
-            StepSeven();
-        }
-        else
-        {
-            // Console.WriteLine("Waiting for confirmation");
-        }
-    }
-
-    public async Task UpdateAsync()
-    {
-        await SubscribeControlPointAsync();
-
-        // Step 1
-        Console.WriteLine("Sending ('Start DFU' (0x01), 'Application' (0x04)) to DFU Control Point");
-        await WriteBytesAsync(ControlPointUuid, new byte[] { 0x01, 0x04 });
-        _currentProcessStep = 1;
-
-        // Step 2
-        Console.WriteLine("Sending Image size to the DFU Packet characteristic");
-        var destination = new byte[4];
-        BinaryPrimitives.WriteInt32LittleEndian(destination, _binFileBytes.Length);
-        var fullSize = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }
-            .Concat(destination)
-            .ToArray();
-        await WriteBytesAsync(PacketUuid, fullSize);
-        Console.WriteLine("Waiting for Image Size notification");
-        _currentProcessStep = 2;
-
-
-        while (isUpdateInProgress)
-        {
-            await Task.Delay(250);
-        }
-
-        Console.WriteLine("Update finished!");
-    }
-
-    private async Task SubscribeControlPointAsync()
-    {
-        var controlPoint = await GetCharacteristicAsync(ControlPointUuid);
-
-        var status = await controlPoint.WriteClientCharacteristicConfigurationDescriptorAsync(
-            GattClientCharacteristicConfigurationDescriptorValue.Notify
-        );
-        if (status == GattCommunicationStatus.Success)
-        {
-            controlPoint.ValueChanged += ControlPointOnValueChanged;
-        }
-        else
-        {
-            Console.WriteLine("Can't subscribe to Control Point");
-        }
     }
 }

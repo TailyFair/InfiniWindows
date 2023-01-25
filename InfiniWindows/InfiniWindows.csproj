@@ -9,6 +9,7 @@
         <RuntimeIdentifier>win-x64</RuntimeIdentifier>
         <PublishReadyToRun>true</PublishReadyToRun>
         <ImplicitUsings>enable</ImplicitUsings>
+        <PublishTrimmed>true</PublishTrimmed>
         <Nullable>enable</Nullable>
     </PropertyGroup>
 

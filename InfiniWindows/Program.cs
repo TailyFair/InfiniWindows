@@ -1,4 +1,5 @@
-﻿using Windows.Devices.Enumeration;
+﻿using System.Reflection;
+using Windows.Devices.Enumeration;
 using InfiniWindows;
 
 class Program
@@ -17,7 +18,13 @@ class Program
         // Start endless BLE device watcher
         var watcher = CreateDeviceWatcher();
 
+        var version = Assembly.GetEntryAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            .InformationalVersion;
+        
+        Console.WriteLine($"InfiniWindows v{version}");
         Console.WriteLine("Scanning for InfiniTime device...");
+        
         var deviceManager = new DeviceManager();
         while (await deviceManager.FindDeviceAsync(_deviceList) == null)
         {

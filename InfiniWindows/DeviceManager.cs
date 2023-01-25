@@ -27,7 +27,7 @@ public class DeviceManager
             if (device == null)
                 continue;
 
-            Console.WriteLine($"Device found! {device.Name} {device.Id}");
+            Console.WriteLine($"Device found! Name: {device.Name} ID: {device.Id}");
 
             if (await OpenDevice(device.Name) != 0)
             {
@@ -110,7 +110,7 @@ public class DeviceManager
 
                     _selectedDevice = await BluetoothLEDevice.FromIdAsync(foundId).AsTask().TimeoutAfter(_timeout);
                     if (!Console.IsInputRedirected)
-                        Console.WriteLine($"Connecting to {_selectedDevice.Name}.");
+                        Console.WriteLine($"Connecting to {_selectedDevice.Name} ...");
                 }
                 catch
                 {

@@ -2,6 +2,7 @@
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Enumeration;
 using InfiniWindows;
+using Spectre.Console;
 
 class Program
 {
@@ -13,6 +14,13 @@ class Program
         { "System.Devices.Aep.DeviceAddress", "System.Devices.Aep.Bluetooth.Le.IsConnectable", };
 
     private static readonly List<DeviceInformation> _deviceList = new();
+
+    private static class Actions
+    {
+        public const string Quit = "Quit";
+        public const string UpdateFirmware = "Update Firmware";
+        public const string SetTime = "Set Time";
+    }
 
     private static async Task Main(string[] args)
     {
@@ -44,16 +52,46 @@ class Program
             }
         }
 
-        var deviceInformationService = new DeviceInformationService(deviceManager);
-        Console.WriteLine($"Firmware Version: {await deviceInformationService.GetFirmwareRevisionAsync()}");
+        var quit = false;
+        while (quit == false)
+        {
+            var action = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title("Select action:")
+                    .AddChoices(Actions.SetTime, Actions.UpdateFirmware, Actions.Quit)
+            );
 
-        Console.Write("Enter path to firmware zip archive: ");
-        var zipPath = Console.ReadLine();
+            Console.Clear();
 
-        await new FirmwareUpdateService(deviceManager, zipPath)
-            .UpdateAsync();
+            switch (action)
+            {
+                case Actions.SetTime:
+                    await RunSetTimeAsync(deviceManager);
+                    break;
+                case Actions.UpdateFirmware:
+                    await RunUpdateFirmwareAsync(deviceManager);
+                    break;
+                case Actions.Quit:
+                    quit = true;
+                    break;
+            }
+        }
 
         watcher.Stop();
+    }
+
+    private static async Task RunSetTimeAsync(DeviceManager deviceManager)
+    {
+        var timeService = new CurrentTimeService(deviceManager);
+        await timeService.SetCurrentTimeAsync();
+    }
+
+    private static async Task RunUpdateFirmwareAsync(DeviceManager deviceManager)
+    {
+        Console.Write("Enter path to firmware zip archive: ");
+        var zipPath = Console.ReadLine();
+        await new FirmwareUpdateService(deviceManager, zipPath)
+            .UpdateAsync();
     }
 
     private static DeviceWatcher CreateDeviceWatcher()

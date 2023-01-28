@@ -212,10 +212,9 @@ public class FirmwareUpdateService : BaseBleService
     {
         _currentProcessStep = 9;
         Console.WriteLine("Activate and reset");
-        await WriteBytesAsync(ControlPointUuid, new byte[] { 0x05 });
+        await WriteBytesAsync(ControlPointUuid, new byte[] { 0x05 }, GattWriteOption.WriteWithoutResponse);
         isUpdateInProgress = false;
         _currentProcessStep = 10;
-        Console.WriteLine("Finished");
     }
 
     private static void PrintProgress(int sentBytes, int totalSize, double percent)

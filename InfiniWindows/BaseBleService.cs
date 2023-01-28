@@ -57,7 +57,7 @@ public abstract class BaseBleService
         return "";
     }
 
-    internal async Task WriteBytesAsync(string uuid, byte[] bytes)
+    internal async Task WriteBytesAsync(string uuid, byte[] bytes, GattWriteOption? option = null)
     {
         if (_characteristics == null)
         {
@@ -68,11 +68,13 @@ public abstract class BaseBleService
             .FirstOrDefault(x => x.Uuid.ToString() == uuid);
 
         var buffer = Helpers.Utilities.FormatData(bytes);
-        var result = await attr.WriteValueWithResultAsync(buffer);
+        var result = option == null
+            ? await attr.WriteValueAsync(buffer)
+            : await attr.WriteValueAsync(buffer, option.Value);
 
-        if (result.Status != GattCommunicationStatus.Success)
+        if (result != GattCommunicationStatus.Success)
         {
-            Console.WriteLine($"Failed to write with status: {result.Status}");
+            Console.WriteLine($"Failed to write with status: {result}");
         }
     }
 

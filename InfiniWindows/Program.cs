@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using Windows.Devices.Bluetooth;
 using Windows.Devices.Enumeration;
 using InfiniWindows;
 
@@ -21,14 +22,26 @@ class Program
         var version = Assembly.GetEntryAssembly()
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             .InformationalVersion;
-        
+
         Console.WriteLine($"InfiniWindows v{version}");
         Console.WriteLine("Scanning for InfiniTime device...");
-        
+
         var deviceManager = new DeviceManager();
-        while (await deviceManager.FindDeviceAsync(_deviceList) == null)
+        BluetoothLEDevice device = null;
+        while (device == null)
         {
-            await Task.Delay(100);
+            try
+            {
+                var foundDevice = await deviceManager.FindDeviceAsync(_deviceList);
+                await Task.Delay(100);
+                var deviceInformationService = new DeviceInformationService(deviceManager);
+                Console.WriteLine($"Firmware Version: {await deviceInformationService.GetFirmwareRevisionAsync()}");
+                device = foundDevice;
+            }
+            catch
+            {
+                // Ignore
+            }
         }
 
         var deviceInformationService = new DeviceInformationService(deviceManager);

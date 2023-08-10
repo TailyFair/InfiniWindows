@@ -2,6 +2,7 @@
 using System.IO.Compression;
 using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
+using Spectre.Console;
 
 namespace InfiniWindows;
 
@@ -62,8 +63,45 @@ public class FirmwareUpdateService : BaseBleService
         _chunksCount = _binFileChunks.Count;
     }
 
+    private ProgressTask _transferTask = null;
+    private ProgressTask _prepareTask = null;
+    private ProgressTask _validateTask = null;
+    private Task _progressBar = null;
+
     public async Task UpdateAsync()
     {
+        _progressBar = AnsiConsole.Progress()
+            .Columns(new ProgressColumn[]
+            {
+                new TaskDescriptionColumn(),
+                new ProgressBarColumn(),
+                new PercentageColumn(),
+                new ElapsedTimeColumn(),
+                new SpinnerColumn(Spinner.Known.Aesthetic),
+            })
+            .StartAsync(async ctx =>
+            {
+                _prepareTask = ctx.AddTask("[green]Preparing[/]", new ProgressTaskSettings()
+                {
+                    MaxValue = 7,
+                });
+                _transferTask = ctx.AddTask("[green]Uploading[/]", new ProgressTaskSettings()
+                {
+                    MaxValue = _binFileBytes.Length,
+                    AutoStart = false
+                });
+                _validateTask = ctx.AddTask("[green]Finalizing[/]", new ProgressTaskSettings()
+                {
+                    MaxValue = 2,
+                    AutoStart = false
+                });
+
+                while (!ctx.IsFinished)
+                {
+                    await Task.Delay(100);
+                }
+            });
+        
         await SubscribeToCharacteristicAsync(ControlPointUuid, OnControlPointOnValueChanged);
 
         await RunStepOneAsync();
@@ -74,6 +112,8 @@ public class FirmwareUpdateService : BaseBleService
         {
             await Task.Delay(250);
         }
+
+        await _progressBar;
 
         Console.WriteLine("Update finished!");
     }
@@ -95,6 +135,9 @@ public class FirmwareUpdateService : BaseBleService
 
                 await RunStepSixAsync();
 
+                _prepareTask.StopTask();
+                _transferTask.StartTask();
+                
                 await RunStepSevenAsync();
             }
             else if (value.Length == 5 && value[0] == 0x11)
@@ -120,6 +163,9 @@ public class FirmwareUpdateService : BaseBleService
             }
             else if (value.SequenceEqual(new byte[] { 0x10, 0x03, 0x01 }))
             {
+                _transferTask.StopTask();
+                _validateTask.StartTask();
+                
                 await RunStepEightAsync();
             }
             else if (value.SequenceEqual(new byte[] { 0x10, 0x04, 0x01 }))
@@ -135,53 +181,60 @@ public class FirmwareUpdateService : BaseBleService
     private async Task RunStepOneAsync()
     {
         _currentProcessStep = 1;
-        Console.WriteLine("Sending ('Start DFU' (0x01), 'Application' (0x04)) to DFU Control Point");
+        // Console.WriteLine("Sending ('Start DFU' (0x01), 'Application' (0x04)) to DFU Control Point");
         await WriteBytesAsync(ControlPointUuid, new byte[] { 0x01, 0x04 });
+        _prepareTask.Increment(1);
     }
 
     private async Task RunStepTwoAsync()
     {
         _currentProcessStep = 2;
-        Console.WriteLine("Sending Image size to the DFU Packet characteristic");
+        // Console.WriteLine("Sending Image size to the DFU Packet characteristic");
         var destination = new byte[4];
         BinaryPrimitives.WriteInt32LittleEndian(destination, _binFileBytes.Length);
         var fullSize = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }
             .Concat(destination)
             .ToArray();
         await WriteBytesAsync(PacketUuid, fullSize);
-        Console.WriteLine("Waiting for Image Size notification");
+        // Console.WriteLine("Waiting for Image Size notification");
+        _prepareTask.Increment(1);
     }
 
     private async Task RunStepThreeAsync()
     {
         _currentProcessStep = 3;
-        Console.WriteLine("Sending 'INIT DFU' + Init Packet Command");
+        // Console.WriteLine("Sending 'INIT DFU' + Init Packet Command");
         await WriteBytesAsync(ControlPointUuid, new byte[] { 0x02, 0x00 });
+        _prepareTask.Increment(1);
     }
 
     private async Task RunStepFourAsync()
     {
         _currentProcessStep = 4;
-        Console.WriteLine("Sending the Init image (DAT)");
+        // Console.WriteLine("Sending the Init image (DAT)");
         await WriteBytesAsync(PacketUuid, _datFileBytes);
+        _prepareTask.Increment(1);
 
-        Console.WriteLine("Send 'INIT DFU' + Init Packet Complete Command");
+        // Console.WriteLine("Send 'INIT DFU' + Init Packet Complete Command");
         await WriteBytesAsync(ControlPointUuid, new byte[] { 0x02, 0x01 });
-        Console.WriteLine("Waiting for INIT DFU notification");
+        // Console.WriteLine("Waiting for INIT DFU notification");
+        _prepareTask.Increment(1);
     }
 
     private async Task RunStepFiveAsync()
     {
         _currentProcessStep = 5;
-        Console.WriteLine("Setting packet receipt notification interval");
+        // Console.WriteLine("Setting packet receipt notification interval");
         await WriteBytesAsync(ControlPointUuid, new byte[] { 0x08, 0x0A });
+        _prepareTask.Increment(1);
     }
 
     private async Task RunStepSixAsync()
     {
         _currentProcessStep = 6;
-        Console.WriteLine("Send 'RECEIVE FIRMWARE IMAGE' command to set DFU in firmware receive state");
+        // Console.WriteLine("Send 'RECEIVE FIRMWARE IMAGE' command to set DFU in firmware receive state");
         await WriteBytesAsync(ControlPointUuid, new byte[] { 0x03 });
+        _prepareTask.Increment(1);
     }
 
     private async Task RunStepSevenAsync()
@@ -190,10 +243,11 @@ public class FirmwareUpdateService : BaseBleService
         var chunk = _binFileChunks[_currentChunk];
         await WriteBytesAsync(PacketUuid, chunk);
         _currentChunk++;
+        _transferTask.Increment(chunk.Length);
         if (_currentChunk == _chunksCount)
         {
-            PrintProgress(_chunksCount * ChunkSize, _chunksCount * ChunkSize, 100);
-            Console.WriteLine("All chunks are sent");
+            PrintProgress(_chunksCount * ChunkSize, _binFileBytes.Length, 100);
+            // Console.WriteLine("All chunks are sent");
         }
         else if ((_currentChunk % SegmentsInterval) != 0)
         {
@@ -204,22 +258,24 @@ public class FirmwareUpdateService : BaseBleService
     private async Task RunStepEightAsync()
     {
         _currentProcessStep = 8;
-        Console.WriteLine("Sending Validate command");
+        // Console.WriteLine("Sending Validate command");
         await WriteBytesAsync(ControlPointUuid, new byte[] { 0x04 });
+        _validateTask.Increment(1);
     }
 
     private async Task RunStepNineAsync()
     {
         _currentProcessStep = 9;
-        Console.WriteLine("Activate and reset");
+        // Console.WriteLine("Activate and reset");
         await WriteBytesAsync(ControlPointUuid, new byte[] { 0x05 }, GattWriteOption.WriteWithoutResponse);
+        _validateTask.Increment(1);
         isUpdateInProgress = false;
         _currentProcessStep = 10;
     }
 
     private static void PrintProgress(int sentBytes, int totalSize, double percent)
     {
-        Console.WriteLine($"[{DateTime.UtcNow}] Sent {sentBytes.ToString(),6}/{totalSize:D6} - {percent:F2}%");
+        // Console.WriteLine($"[{DateTime.UtcNow}] Sent {sentBytes.ToString(),6}/{totalSize:D6} - {percent:F2}%");
     }
 
     private static byte[] ReadFully(Stream input)

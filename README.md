@@ -18,7 +18,7 @@ Download the latest release from [the github releases page](https://github.com/T
 
 Requirements:
 
-- .NET 6 or later
+- NET 8 or later
 - Windows SDK
 
 ```bash

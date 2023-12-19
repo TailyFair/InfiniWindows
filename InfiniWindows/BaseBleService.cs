@@ -36,7 +36,7 @@ public abstract class BaseBleService
         }
     }
 
-    internal async Task<string> ReadCharacteristicAsync(string characteristicUuid)
+    internal async Task<string> ReadCharacteristicAsync(string characteristicUuid, Helpers.DataFormat format = Helpers.DataFormat.UTF8)
     {
         var characteristics = await GetCharacteristicsAsync();
 
@@ -48,7 +48,7 @@ public abstract class BaseBleService
 
         if (result.Status == GattCommunicationStatus.Success)
         {
-            var value = Helpers.Utilities.FormatValue(result.Value, Helpers.DataFormat.UTF8);
+            var value = Helpers.Utilities.FormatValue(result.Value, format);
             return value;
         }
 

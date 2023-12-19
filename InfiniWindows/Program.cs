@@ -1,10 +1,11 @@
 ﻿using System.Reflection;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Enumeration;
-using InfiniWindows;
 using Spectre.Console;
 
-class Program
+namespace InfiniWindows;
+
+internal static class Program
 {
     // "Magic" string for all BLE devices
     private const string _aqsAllBLEDevices =
@@ -14,6 +15,7 @@ class Program
         { "System.Devices.Aep.DeviceAddress", "System.Devices.Aep.Bluetooth.Le.IsConnectable", };
 
     private static readonly List<DeviceInformation> _deviceList = new();
+    private const string Spacer = "_______________________";
 
     private static class Actions
     {
@@ -32,6 +34,7 @@ class Program
             .InformationalVersion;
 
         Console.WriteLine($"InfiniWindows v{version}");
+        Console.WriteLine(Spacer);
         Console.WriteLine("Scanning for InfiniTime device...");
 
         var deviceManager = new DeviceManager();
@@ -42,8 +45,8 @@ class Program
             {
                 var foundDevice = await deviceManager.FindDeviceAsync(_deviceList);
                 await Task.Delay(100);
-                var deviceInformationService = new DeviceInformationService(deviceManager);
-                Console.WriteLine($"Firmware Version: {await deviceInformationService.GetFirmwareRevisionAsync()}");
+                await PrintDeviceInformation(deviceManager);
+
                 device = foundDevice;
             }
             catch
@@ -55,6 +58,7 @@ class Program
         var quit = false;
         while (quit == false)
         {
+            Console.WriteLine(Spacer);
             var action = AnsiConsole.Prompt(
                 new SelectionPrompt<string>()
                     .Title("Select action:")
@@ -78,6 +82,14 @@ class Program
         }
 
         watcher.Stop();
+    }
+
+    private static async Task PrintDeviceInformation(DeviceManager deviceManager)
+    {
+        var deviceInformationService = new DeviceInformationService(deviceManager);
+        Console.WriteLine(Spacer);
+        Console.WriteLine($"Firmware Version: {await deviceInformationService.GetFirmwareRevisionAsync()}");
+        Console.WriteLine($"Battery Level: {await new BatteryLevelService(deviceManager).GetBatteryLevelAsync()}%");
     }
 
     private static async Task RunSetTimeAsync(DeviceManager deviceManager)

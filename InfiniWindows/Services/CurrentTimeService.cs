@@ -1,4 +1,6 @@
-﻿namespace InfiniWindows;
+﻿using InfiniWindows.Services;
+
+namespace InfiniWindows;
 
 public class CurrentTimeService : BaseBleService
 {

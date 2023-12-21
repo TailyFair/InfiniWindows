@@ -3,7 +3,7 @@ using System.IO.Compression;
 using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
 
-namespace InfiniWindows;
+namespace InfiniWindows.Services;
 
 public class FirmwareUpdateService : BaseBleService
 {

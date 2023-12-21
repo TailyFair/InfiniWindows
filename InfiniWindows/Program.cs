@@ -1,6 +1,7 @@
 ﻿using System.Reflection;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Enumeration;
+using InfiniWindows.Services;
 using Spectre.Console;
 
 namespace InfiniWindows;

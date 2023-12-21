@@ -1,4 +1,4 @@
-﻿namespace InfiniWindows;
+﻿namespace InfiniWindows.Services;
 
 public class BatteryLevelService : BaseBleService
 {

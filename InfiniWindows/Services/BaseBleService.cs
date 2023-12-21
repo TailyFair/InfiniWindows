@@ -3,7 +3,7 @@ using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using Windows.Devices.Enumeration;
 using Windows.Foundation;
 
-namespace InfiniWindows;
+namespace InfiniWindows.Services;
 
 public abstract class BaseBleService
 {

@@ -1,4 +1,5 @@
-﻿using System.Reflection;
+﻿using System.Net.Http.Json;
+using System.Reflection;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Enumeration;
 using InfiniWindows.Services;
@@ -26,8 +27,37 @@ internal static class Program
         public const string ShowDeviceInformation = "Show device information";
     }
 
+    private record GithubRelease
+    {
+        public string name { get; set; }
+        public DateTime published_at { get; set; }
+    }
+
     private static async Task Main(string[] args)
     {
+        var client = new HttpClient()
+        {
+            BaseAddress = new Uri("https://api.github.com/repos/InfiniTimeOrg/InfiniTime/releases")
+        };
+        client.DefaultRequestHeaders.Add("User-Agent", "InfiniWindows");
+        var response = await client.GetFromJsonAsync<List<GithubRelease>>("");
+
+        var releases = response?
+            .Take(5)
+            .Select(x => $"{x.published_at.ToShortDateString()} - {x.name.Trim()}")
+            .ToList();
+
+        releases?.ForEach(Console.WriteLine);
+
+        var asd = AnsiConsole.Prompt(
+            new SelectionPrompt<string>()
+                .Title("Select action:")
+                .AddChoices(
+                    releases
+                )
+        );
+
+        return;
         // Start endless BLE device watcher
         var watcher = CreateDeviceWatcher();
 

@@ -22,7 +22,8 @@ internal static class Program
     {
         public const string Quit = "Quit";
         public const string UpdateFirmware = "Update Firmware";
-        public const string SetTime = "Set Time";
+        public const string SetTime = "Set time";
+        public const string ShowDeviceInformation = "Show device information";
     }
 
     private static async Task Main(string[] args)
@@ -46,7 +47,7 @@ internal static class Program
             {
                 var foundDevice = await deviceManager.FindDeviceAsync(_deviceList);
                 await Task.Delay(100);
-                await PrintDeviceInformation(deviceManager);
+                await PrintDeviceInformationAsync(deviceManager);
 
                 device = foundDevice;
             }
@@ -63,13 +64,21 @@ internal static class Program
             var action = AnsiConsole.Prompt(
                 new SelectionPrompt<string>()
                     .Title("Select action:")
-                    .AddChoices(Actions.SetTime, Actions.UpdateFirmware, Actions.Quit)
+                    .AddChoices(
+                        Actions.ShowDeviceInformation,
+                        Actions.SetTime,
+                        Actions.UpdateFirmware,
+                        Actions.Quit
+                    )
             );
 
             Console.Clear();
 
             switch (action)
             {
+                case Actions.ShowDeviceInformation:
+                    await PrintDeviceInformationAsync(deviceManager);
+                    break;
                 case Actions.SetTime:
                     await RunSetTimeAsync(deviceManager);
                     break;
@@ -85,12 +94,14 @@ internal static class Program
         watcher.Stop();
     }
 
-    private static async Task PrintDeviceInformation(DeviceManager deviceManager)
+    private static async Task PrintDeviceInformationAsync(DeviceManager deviceManager)
     {
-        var deviceInformationService = new DeviceInformationService(deviceManager);
+        var firmwareRevision = await new DeviceInformationService(deviceManager).GetFirmwareRevisionAsync();
+        var batteryLevel = await new BatteryLevelService(deviceManager).GetBatteryLevelAsync();
+        Console.Clear();
         Console.WriteLine(Spacer);
-        Console.WriteLine($"Firmware Version: {await deviceInformationService.GetFirmwareRevisionAsync()}");
-        Console.WriteLine($"Battery Level: {await new BatteryLevelService(deviceManager).GetBatteryLevelAsync()}%");
+        Console.WriteLine($"Firmware Version: {firmwareRevision}");
+        Console.WriteLine($"Battery Level: {batteryLevel}%");
     }
 
     private static async Task RunSetTimeAsync(DeviceManager deviceManager)
